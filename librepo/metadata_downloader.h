@@ -34,15 +34,19 @@ typedef struct {
     LrHandle *handle; /*!<
         Related handle */
 
-    LrYumRepo *repo; /*!<
-        Related repo */
+    union {
+        struct {
+            LrYumRepo *repo; /*!<
+                Related repo */
 
-    LrYumRepoMd *repomd; /*!<
-        Related repomd */
+            LrYumRepoMd *repomd; /*!<
+                Related repomd */
 
-    int repomd_records_to_download;
-    int repomd_records_downloaded;/*!<
-        Necessary for endcb, which would be otherwise called prematurely */
+            int repomd_records_to_download;
+            int repomd_records_downloaded;/*!<
+                Necessary for endcb, which would be otherwise called prematurely */
+        } yum;
+    } repo;
 
     void *cbdata; /*!<
         Callback data */

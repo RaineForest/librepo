@@ -193,11 +193,20 @@ metadatatarget_end_callback(void *data,
     self = (_MetadataTargetObject *)cbdata->cbdata;
 
     LrMetadataTarget *target = self->target;
-    target->repomd_records_downloaded++;
+    long repotype = -1;
+    GError *err = NULL;
+    lr_handle_getinfo(target->handle, &err, LRI_REPOTYPE, &repotype);
+    if (!err && repotype == LR_YUMREPO) {
+        target->repo.yum.repomd_records_downloaded++;
 
-    if (target->repomd_records_to_download != target->repomd_records_downloaded)
-        return ret;
-    else if (!self->end_cb)
+        if (target->repo.yum.repomd_records_to_download != target->repo.yum.repomd_records_downloaded)
+            return ret;
+    }
+    else {
+        g_error_free(err);
+    }
+
+    if (!self->end_cb)
         return ret;
 
     if (self->cb_data)

@@ -53,11 +53,11 @@ lr_metadatatarget_new(LrHandle *handle,
     target->chunk = g_string_chunk_new(16);
 
     target->handle = handle;
-    target->repo = repo;
-    target->repomd = repomd;
+    target->repo.yum.repo = repo;
+    target->repo.yum.repomd = repomd;
     target->cbdata = cbdata;
-    target->repomd_records_to_download = 0;
-    target->repomd_records_downloaded = 0;
+    target->repo.yum.repomd_records_to_download = 0;
+    target->repo.yum.repomd_records_downloaded = 0;
     target->download_target = NULL;
     target->gnupghomedir = NULL;
     target->err = NULL;
@@ -188,27 +188,114 @@ fillInvalidationValues(GSList **fd_list, GSList **paths)
 
 void
 handle_failure(LrMetadataTarget *target,
-               GSList **fd_list,
-               GSList **paths,
                GError *err)
 {
     lr_metadatatarget_append_error(target, err->message, NULL);
-    fillInvalidationValues(fd_list, paths);
     g_error_free(err);
 }
 
 void
-create_repomd_xml_download_targets(GSList *targets,
-                                   GSList **download_targets,
-                                   GSList **fd_list,
-                                   GSList **paths)
+create_repomd_xml_download_target(LrMetadataTarget *target,
+                                  LrDownloadTarget **download_target,
+                                  int *fd,
+                                  char **path)
+{
+    GSList *checksums = NULL;
+    GError *err = NULL;
+    LrHandle *handle;
+    *path = NULL;
+    *fd = -1;
+
+    handle = target->handle;
+
+    if (!handle->urls && !handle->mirrorlisturl && !handle->metalinkurl) {
+        lr_metadatatarget_append_error(target, "No LRO_URLS, LRO_MIRRORLISTURL nor LRO_METALINKURL specified", NULL);
+        return;
+    }
+
+    if (handle->repotype != LR_YUMREPO) {
+        lr_metadatatarget_append_error(target, "Bad LRO_REPOTYPE specified", NULL);
+        return;
+    }
+
+    if (target->repo.yum.repo == NULL) {
+        target->repo.yum.repo = lr_yum_repo_init();
+    }
+    if (target->repo.yum.repomd == NULL) {
+        target->repo.yum.repomd = lr_yum_repomd_init();
+    }
+
+    if (!lr_handle_prepare_internal_mirrorlist(handle,
+                                                handle->fastestmirror,
+                                                &err)) {
+        lr_metadatatarget_append_error(target, "Cannot prepare internal mirrorlist: %s", err->message, NULL);
+        g_error_free(err);
+        return;
+    }
+
+    if (mkdir(handle->destdir, S_IRWXU) == -1 && errno != EEXIST) {
+        lr_metadatatarget_append_error(target, "Cannot create tmpdir: %s %s", handle->destdir, g_strerror(errno), NULL);
+        g_error_free(err);
+        return;
+    }
+
+    if (!lr_prepare_repodata_dir(handle, &err)) {
+        handle_failure(target, err);
+        return;
+    }
+
+    if (!handle->update) {
+        if (!lr_store_mirrorlist_files(handle, target->repo.yum.repo, &err)) {
+            handle_failure(target, err);
+            return;
+        }
+
+        if (!lr_copy_metalink_content(handle, target->repo.yum.repo, &err)) {
+            handle_failure(target, err);
+            return;
+        }
+
+        if ((*fd = lr_prepare_repomd_xml_file(handle, path, &err)) == -1) {
+            handle_failure(target, err);
+            return;
+        }
+    }
+
+    if (handle->metalink && (handle->checks & LR_CHECK_CHECKSUM)) {
+        lr_get_best_checksum(handle->metalink, &checksums);
+    }
+
+    CbData *cbdata = lr_get_metadata_failure_callback(handle);
+
+    *download_target = lr_downloadtarget_new(target->handle,
+                                            "repodata/repomd.xml",
+                                            NULL,
+                                            *fd,
+                                            NULL,
+                                            checksums,
+                                            0,
+                                            0,
+                                            NULL,
+                                            cbdata,
+                                            NULL,
+                                            (cbdata) ? hmfcb : NULL,
+                                            target,
+                                            0,
+                                            0,
+                                            NULL,
+                                            TRUE,
+                                            FALSE);
+}
+
+void
+create_download_targets(GSList *targets,
+                        GSList **download_targets,
+                        GSList **fd_list,
+                        GSList **paths)
 {
     for (GSList *elem = targets; elem; elem = g_slist_next(elem)) {
         LrMetadataTarget *target = elem->data;
         LrDownloadTarget *download_target;
-        GSList *checksums = NULL;
-        GError *err = NULL;
-        LrHandle *handle;
         char *path = NULL;
         int fd = -1;
 
@@ -218,97 +305,27 @@ create_repomd_xml_download_targets(GSList *targets,
             continue;
         }
 
-        handle = target->handle;
-
-        if (!handle->urls && !handle->mirrorlisturl && !handle->metalinkurl) {
-            lr_metadatatarget_append_error(target, "No LRO_URLS, LRO_MIRRORLISTURL nor LRO_METALINKURL specified", NULL);
-            fillInvalidationValues(fd_list, paths);
-            continue;
+        switch (target->handle->repotype) {
+            case LR_YUMREPO:
+                create_repomd_xml_download_target(target, &download_target, &fd, &path);
+                break;
+            default:
+                lr_metadatatarget_append_error(target, "No LRO_URLS, LRO_MIRRORLISTURL nor LRO_METALINKURL specified", NULL);
         }
-
-        if (handle->repotype != LR_YUMREPO) {
-            lr_metadatatarget_append_error(target, "Bad LRO_REPOTYPE specified", NULL);
-            fillInvalidationValues(fd_list, paths);
-            continue;
-        }
-
-        if (target->repo == NULL) {
-            target->repo = lr_yum_repo_init();
-        }
-        if (target->repomd == NULL) {
-            target->repomd = lr_yum_repomd_init();
-        }
-
-        if (!lr_handle_prepare_internal_mirrorlist(handle,
-                                                   handle->fastestmirror,
-                                                   &err)) {
-            lr_metadatatarget_append_error(target, "Cannot prepare internal mirrorlist: %s", err->message, NULL);
-            fillInvalidationValues(fd_list, paths);
-            g_error_free(err);
-            continue;
-        }
-
-        if (mkdir(handle->destdir, S_IRWXU) == -1 && errno != EEXIST) {
-            lr_metadatatarget_append_error(target, "Cannot create tmpdir: %s %s", handle->destdir, g_strerror(errno), NULL);
-            fillInvalidationValues(fd_list, paths);
-            g_error_free(err);
-            continue;
-        }
-
-        if (!lr_prepare_repodata_dir(handle, &err)) {
-            handle_failure(target, fd_list, paths, err);
-            continue;
-        }
-
-        if (!handle->update) {
-            if (!lr_store_mirrorlist_files(handle, target->repo, &err)) {
-                handle_failure(target, fd_list, paths, err);
-                continue;
-            }
-
-            if (!lr_copy_metalink_content(handle, target->repo, &err)) {
-                handle_failure(target, fd_list, paths, err);
-                continue;
-            }
-
-            if ((fd = lr_prepare_repomd_xml_file(handle, &path, &err)) == -1) {
-                handle_failure(target, fd_list, paths, err);
-                continue;
-            }
-        }
-
-        if (handle->metalink && (handle->checks & LR_CHECK_CHECKSUM)) {
-            lr_get_best_checksum(handle->metalink, &checksums);
-        }
-
-        CbData *cbdata = lr_get_metadata_failure_callback(handle);
-
-        download_target = lr_downloadtarget_new(target->handle,
-                                                "repodata/repomd.xml",
-                                                NULL,
-                                                fd,
-                                                NULL,
-                                                checksums,
-                                                0,
-                                                0,
-                                                NULL,
-                                                cbdata,
-                                                NULL,
-                                                (cbdata) ? hmfcb : NULL,
-                                                target,
-                                                0,
-                                                0,
-                                                NULL,
-                                                TRUE,
-                                                FALSE);
 
         target->download_target = download_target;
         (*download_targets) = g_slist_append((*download_targets), download_target);
 
         (*fd_list) = appendFdValue((*fd_list), fd);
-        (*paths) = appendPath((*paths), path);
+        if (!path) {
+            (*paths) = appendPath((*paths), "");
+        }
+        else {
+            (*paths) = appendPath((*paths), path);
+        }
     }
 }
+
 
 void
 process_repomd_xml(GSList *targets,
@@ -338,14 +355,14 @@ process_repomd_xml(GSList *targets,
             continue;
         }
 
-        if (!lr_check_repomd_xml_asc_availability(handle, target->repo, fd_value, path->data, &error)) {
+        if (!lr_check_repomd_xml_asc_availability(handle, target->repo.yum.repo, fd_value, path->data, &error)) {
             lr_metadatatarget_append_error(target, error->message, NULL);
             g_error_free(error);
             continue;
         }
 
         lseek(fd_value, SEEK_SET, 0);
-        ret = lr_yum_repomd_parse_file(target->repomd, fd_value, lr_xml_parser_warning_logger,
+        ret = lr_yum_repomd_parse_file(target->repo.yum.repomd, fd_value, lr_xml_parser_warning_logger,
                                        "Repomd xml parser", &error);
         close(fd_value);
         if (!ret) {
@@ -355,8 +372,8 @@ process_repomd_xml(GSList *targets,
             continue;
         }
 
-        target->repo->destdir = g_strdup(handle->destdir);
-        target->repo->repomd = path->data;
+        target->repo.yum.repo->destdir = g_strdup(handle->destdir);
+        target->repo.yum.repo->repomd = path->data;
     }
 }
 
@@ -414,14 +431,34 @@ lr_download_metadata(GSList *targets,
         return FALSE;
     }
 
-    create_repomd_xml_download_targets(targets, &download_targets, &fd_list, &paths);
+    create_download_targets(targets, &download_targets, &fd_list, &paths);
 
     if (!lr_download(download_targets, FALSE, err)) {
         return cleanup(download_targets, err);
     }
 
-    process_repomd_xml(targets, fd_list, paths);
-    lr_yum_download_repos(targets, err);
+    for (GSList *elem = targets, *fd = fd_list, *path = paths; elem;
+         elem = g_slist_next(elem), fd = g_slist_next(fd), path = g_slist_next(path)) {
+        /* create single element "lists" so that we can switch implementation
+         * based on repo type */
+        GSList elem_copy = *elem;
+        elem_copy.next = NULL;
+        GSList fd_copy = *fd;
+        fd_copy.next = NULL;
+        GSList path_copy = *elem;
+        path_copy.next = NULL;
+
+        LrMetadataTarget *target = elem_copy.data;
+
+        switch (target->handle->repotype) {
+            case LR_YUMREPO:
+                process_repomd_xml(&elem_copy, &fd_copy, &path_copy);
+                lr_yum_download_repos(&elem_copy, err);
+                break;
+            default:
+                break;
+        }
+    }
 
     return cleanup(download_targets, err);
 }

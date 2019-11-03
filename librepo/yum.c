@@ -829,7 +829,7 @@ prepare_repo_download_targets(LrHandle *handle,
         }
 
         if (mdtarget != NULL)
-            mdtarget->repomd_records_to_download++;
+            mdtarget->repo.yum.repomd_records_to_download++;
         *targets = g_slist_append(*targets, target);
 
         /* Because path may already exists in repo (while update) */
@@ -903,8 +903,8 @@ lr_yum_download_repos(GSList *targets,
         }
 
         prepare_repo_download_targets(target->handle,
-                                      target->repo,
-                                      target->repomd,
+                                      target->repo.yum.repo,
+                                      target->repo.yum.repomd,
                                       target,
                                       &download_targets,
                                       &cbdata_list,
