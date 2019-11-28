@@ -32,11 +32,17 @@ struct _LrResult {
     char            *destdir; /*!<
         Directory with repo */
 
-    LrYumRepoMd    *yum_repomd; /*!<
-        Pointer to struct representingrepomd.xml */
+    union {
+        struct {
+            LrYumRepoMd    *yum_repomd; /*!<
+                Pointer to struct representingrepomd.xml */
 
-    LrYumRepo      *yum_repo; /*!<
-        Pointer to struct with info about yum repo */
+            LrYumRepo      *yum_repo; /*!<
+                Pointer to struct with info about yum repo */
+        } yum;
+    } repo;
+
+    LrRepotype repotype;
 };
 
 G_END_DECLS

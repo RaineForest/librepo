@@ -1203,8 +1203,8 @@ lr_yum_use_local(LrHandle *handle, LrResult *result, GError **err)
     g_debug("%s: Locating repo..", __func__);
 
     // Shortcuts
-    repo   = result->yum_repo;
-    repomd = result->yum_repomd;
+    repo   = result->repo.yum.yum_repo;
+    repomd = result->repo.yum.yum_repomd;
     baseurl = handle->urls[0];
 
     // Skip "file://" prefix if present
@@ -1281,8 +1281,8 @@ lr_yum_download_remote(LrHandle *handle, LrResult *result, GError **err)
 
     assert(!err || *err == NULL);
 
-    repo   = result->yum_repo;
-    repomd = result->yum_repomd;
+    repo   = result->repo.yum.yum_repo;
+    repomd = result->repo.yum.yum_repomd;
 
     g_debug("%s: Downloading/Copying repo..", __func__);
 
@@ -1382,7 +1382,7 @@ lr_yum_perform(LrHandle *handle, LrResult *result, GError **err)
 
     if (handle->update) {
         // Download/Locate only specified files
-        if (!result->yum_repo || !result->yum_repomd) {
+        if (!result->repo.yum.yum_repo || !result->repo.yum.yum_repomd) {
             g_set_error(err, LR_YUM_ERROR, LRE_INCOMPLETERESULT,
                     "Incomplete result object - "
                     "Cannot update on this result object");
@@ -1390,18 +1390,18 @@ lr_yum_perform(LrHandle *handle, LrResult *result, GError **err)
         }
     } else {
         // Download/Locate from scratch
-        if (result->yum_repo || result->yum_repomd) {
+        if (result->repo.yum.yum_repo || result->repo.yum.yum_repomd) {
             g_set_error(err, LR_YUM_ERROR, LRE_ALREADYUSEDRESULT,
                         "This result object is not clear - "
                         "Already used result object");
             return FALSE;
         }
-        result->yum_repo = lr_yum_repo_init();
-        result->yum_repomd = lr_yum_repomd_init();
+        result->repo.yum.yum_repo = lr_yum_repo_init();
+        result->repo.yum.yum_repomd = lr_yum_repomd_init();
     }
 
-    repo   = result->yum_repo;
-    repomd = result->yum_repomd;
+    repo   = result->repo.yum.yum_repo;
+    repomd = result->repo.yum.yum_repomd;
 
     if (handle->local) {
         // Do not duplicate repository, just use the existing local one

@@ -122,13 +122,13 @@ lr_yum_repomd_get_age(LrResult *result)
 {
     assert(result);
 
-    if (!result->yum_repo || !result->yum_repo->repomd)
+    if (!result->repo.yum.yum_repo || !result->repo.yum.yum_repo->repomd)
         return 0.0;
 
     int rc;
     struct stat st;
 
-    rc = stat(result->yum_repo->repomd, &st);
+    rc = stat(result->repo.yum.yum_repo->repomd, &st);
     if (rc != 0)
         return 0.0;
 

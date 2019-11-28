@@ -43,8 +43,14 @@ lr_result_clear(LrResult *result)
     if (!result)
         return;
     lr_free(result->destdir);
-    lr_yum_repomd_free(result->yum_repomd);
-    lr_yum_repo_free(result->yum_repo);
+    switch (result->repotype) {
+        case LR_YUMREPO:
+            lr_yum_repomd_free(result->repo.yum.yum_repomd);
+            lr_yum_repo_free(result->repo.yum.yum_repo);
+            break;
+        default:
+            break;
+    }
     memset(result, 0, sizeof(struct _LrResult));
 }
 
@@ -82,22 +88,22 @@ lr_result_getinfo(LrResult *result,
     case LRR_YUM_REPO: {
         LrYumRepo **repo;
         repo = va_arg(arg, LrYumRepo **);
-        *repo = result->yum_repo;
+        *repo = result->repo.yum.yum_repo;
         break;
     }
 
     case LRR_RPMMD_REPOMD:
     case LRR_YUM_REPOMD: {
         LrYumRepoMd **repomd = va_arg(arg, LrYumRepoMd **);
-        *repomd = result->yum_repomd;
+        *repomd = result->repo.yum.yum_repomd;
         break;
     }
 
     case LRR_RPMMD_TIMESTAMP:
     case LRR_YUM_TIMESTAMP: {
         gint64 *ts = va_arg(arg, gint64 *);
-        if (result->yum_repomd) {
-            *ts = lr_yum_repomd_get_highest_timestamp(result->yum_repomd, &tmp_err);
+        if (result->repo.yum.yum_repomd) {
+            *ts = lr_yum_repomd_get_highest_timestamp(result->repo.yum.yum_repomd, &tmp_err);
             if (tmp_err) {
                 rc = FALSE;
                 g_propagate_error(err, tmp_err);
