@@ -25,6 +25,7 @@
 
 #include "repomd.h"
 #include "yum.h"
+#include "deb.h"
 
 G_BEGIN_DECLS
 
@@ -40,6 +41,9 @@ struct _LrResult {
             LrYumRepo      *yum_repo; /*!<
                 Pointer to struct with info about yum repo */
         } yum;
+        struct {
+            LrDebRepo      *deb_repo;
+        } deb;
     } repo;
 
     LrRepotype repotype;

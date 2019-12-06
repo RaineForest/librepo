@@ -194,3 +194,9 @@ lr_yum_error_quark(void)
 {
     return g_quark_from_static_string("lr_yum_error");
 }
+
+GQuark
+lr_deb_error_quark(void)
+{
+    return g_quark_from_static_string("lr_deb_error");
+}
